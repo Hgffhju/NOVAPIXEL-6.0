@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --app-bg: #14161b;
+    --app-panel: #1b1e26;
+    --app-panel-header: #20242f;
+    --app-surface: #242936;
+    --app-border: #2d3344;
+    --app-border-subtle: #262b3a;
+    --app-accent: #3b82f6;
+    --app-accent-hover: #60a5fa;
+    --app-text: #e6e9f2;
+    --app-text-muted: #8c95a8;
+    --app-stage: #0d0f13;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    color: var(--app-text);
+    background-color: var(--app-bg);
+  }
+
+  /* Custom sleek sliders */
+  input[type="range"] {
+    accent-color: #3b82f6;
+  }
+
+  /* Subtle dark scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #2f3546;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #414960;
+  }
+}
+
+@keyframes marchingAnts {
+  0% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 16; }
+}
+
+.marching-ants {
+  stroke-dasharray: 4 4;
+  animation: marchingAnts 0.6s linear infinite;
+}
+
+.canvas-checkerboard {
+  background-image: linear-gradient(45deg, #1b1e25 25%, transparent 25%),
+                    linear-gradient(-45deg, #1b1e25 25%, transparent 25%),
+                    linear-gradient(45deg, transparent 75%, #1b1e25 75%),
+                    linear-gradient(-45deg, transparent 75%, #1b1e25 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+  background-color: #121419;
+}

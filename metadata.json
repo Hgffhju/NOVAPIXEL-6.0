@@ -1,0 +1,6 @@
+{
+  "name": "NovaPixel Studio",
+  "description": "Next-generation professional creative image editor featuring real-time AI collaboration, multi-layer GPU compositor, 32-bit floating point color pipeline, non-destructive adjustment layers, generative retouching, and seamless cross-platform workflow.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
