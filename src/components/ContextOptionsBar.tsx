@@ -4,6 +4,8 @@ import {
   BrushSettings,
   CloneSettings,
   BlendMode,
+  EyedropperSettings,
+  ColorSamplerPoint,
 } from '../types';
 import {
   Sparkles,
@@ -16,6 +18,10 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  Pipette,
+  Target,
+  MousePointerClick,
+  Eye,
 } from 'lucide-react';
 
 interface ContextOptionsBarProps {
@@ -31,6 +37,12 @@ interface ContextOptionsBarProps {
   hasSelection: boolean;
   cropPreset: string;
   onSetCropPreset: (preset: string) => void;
+  eyedropperSettings?: EyedropperSettings;
+  onUpdateEyedropper?: (settings: Partial<EyedropperSettings>) => void;
+  sampledColor?: string;
+  colorSamplers?: ColorSamplerPoint[];
+  onClearColorSamplers?: () => void;
+  activeLayerName?: string;
 }
 
 export const ContextOptionsBar: React.FC<ContextOptionsBarProps> = ({
@@ -46,9 +58,118 @@ export const ContextOptionsBar: React.FC<ContextOptionsBarProps> = ({
   hasSelection,
   cropPreset,
   onSetCropPreset,
+  eyedropperSettings = { sampleSize: 1, sampleSource: 'all', showLoupe: true },
+  onUpdateEyedropper,
+  sampledColor,
+  colorSamplers = [],
+  onClearColorSamplers,
+  activeLayerName,
 }) => {
   return (
     <div className="h-8 bg-[#181a23] border-b border-[#242938] flex items-center px-3 text-[11px] text-[#adb5c7] gap-4 select-none shrink-0 overflow-x-auto">
+      {/* Eyedropper / Color Picker Tool Controls */}
+      {currentTool === 'eyedropper' && (
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5 text-blue-400 font-medium">
+            <Pipette size={13} />
+            <span>Color Sampler</span>
+          </div>
+
+          <label className="flex items-center gap-1.5">
+            <span>Sample Size:</span>
+            <select
+              value={eyedropperSettings.sampleSize}
+              onChange={(e) => onUpdateEyedropper?.({ sampleSize: Number(e.target.value) as any })}
+              className="bg-[#202534] border border-[#313a50] rounded px-2 py-0.5 text-white outline-none"
+            >
+              <option value={1}>Point Sample (1×1)</option>
+              <option value={3}>3 by 3 Average</option>
+              <option value={5}>5 by 5 Average</option>
+              <option value={11}>11 by 11 Average</option>
+              <option value={31}>31 by 31 Average</option>
+            </select>
+          </label>
+
+          <label className="flex items-center gap-1.5">
+            <span>Sample:</span>
+            <select
+              value={eyedropperSettings.sampleSource}
+              onChange={(e) => onUpdateEyedropper?.({ sampleSource: e.target.value as any })}
+              className="bg-[#202534] border border-[#313a50] rounded px-2 py-0.5 text-white outline-none"
+            >
+              <option value="all">All Layers (Composite)</option>
+              <option value="current">Current Layer</option>
+              <option value="current-below">Current & Below</option>
+            </select>
+          </label>
+
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={eyedropperSettings.showLoupe}
+              onChange={(e) => onUpdateEyedropper?.({ showLoupe: e.target.checked })}
+              className="rounded bg-[#202534] border-[#313a50] text-blue-500 focus:ring-0 cursor-pointer"
+            />
+            <span>Show Sampling Loupe</span>
+          </label>
+
+          {sampledColor && (
+            <div className="flex items-center gap-1.5 pl-2 border-l border-[#2e374c]">
+              <span
+                className="w-3.5 h-3.5 rounded border border-white/30 shrink-0"
+                style={{ backgroundColor: sampledColor }}
+              />
+              <span className="font-mono text-white text-[10px]">{sampledColor.toUpperCase()}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Color Sampler Targets Tool Controls */}
+      {currentTool === 'color-sampler' && (
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5 text-blue-400 font-medium">
+            <Target size={13} />
+            <span>Target Points ({colorSamplers.length}/4)</span>
+          </div>
+
+          <span className="text-[#8490a6]">Click on canvas to drop reference target</span>
+
+          {colorSamplers.map((s, idx) => (
+            <div key={s.id} className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#202534] border border-[#2d374d]">
+              <span className="font-bold text-blue-400 font-mono text-[10px]">#{idx + 1}</span>
+              <span className="w-2.5 h-2.5 rounded-full border border-white/40" style={{ backgroundColor: s.hex }} />
+              <span className="font-mono text-[10px] text-white">R:{s.r} G:{s.g} B:{s.b}</span>
+            </div>
+          ))}
+
+          {colorSamplers.length > 0 && (
+            <button
+              onClick={onClearColorSamplers}
+              className="px-2 py-0.5 rounded bg-[#282f42] hover:bg-red-500/20 hover:text-red-300 text-[#a4afc2] transition-colors"
+            >
+              Clear Targets
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Layer Picker Tool Controls */}
+      {currentTool === 'layer-picker' && (
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5 text-blue-400 font-medium">
+            <MousePointerClick size={13} />
+            <span>Layer Pick Tool</span>
+          </div>
+          <span className="text-[#8490a6]">Click anywhere on canvas to select that layer</span>
+          {activeLayerName && (
+            <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-[#202534] border border-[#2d374d]">
+              <span className="text-[10px] text-[#78849b]">Active:</span>
+              <span className="text-white font-medium text-[11px]">{activeLayerName}</span>
+            </div>
+          )}
+        </div>
+      )}
       {/* Brush / Eraser / Paint Controls */}
       {['brush', 'eraser', 'heal', 'spot'].includes(currentTool) && (
         <div className="flex items-center gap-4">

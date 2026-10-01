@@ -19,6 +19,9 @@ interface CollabPanelProps {
   comments: CanvasComment[];
   onResolveComment: (commentId: string) => void;
   onFocusComment: (x: number, y: number) => void;
+  currentUser?: { displayName?: string | null; email?: string | null; photoURL?: string | null } | null;
+  onSignIn?: () => void;
+  onSignOut?: () => void;
 }
 
 export const CollabPanel: React.FC<CollabPanelProps> = ({
@@ -26,6 +29,9 @@ export const CollabPanel: React.FC<CollabPanelProps> = ({
   comments,
   onResolveComment,
   onFocusComment,
+  currentUser,
+  onSignIn,
+  onSignOut,
 }) => {
   const [activeTab, setActiveTab] = useState<'team' | 'pins' | 'activity'>('team');
   const [copiedLink, setCopiedLink] = useState(false);
@@ -53,9 +59,50 @@ export const CollabPanel: React.FC<CollabPanelProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="font-semibold text-white">Live Session</span>
+            <span className="font-semibold text-white">Cloud Collab</span>
           </div>
-          <span className="text-[10px] font-mono text-[#78849b]">Room: studio-main</span>
+          <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-1.5 py-0.5 rounded">
+            Firestore Live
+          </span>
+        </div>
+
+        {/* User Account / Auth Card */}
+        <div className="flex items-center justify-between p-2 rounded bg-[#1c212e] border border-[#2b3447]">
+          {currentUser ? (
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center gap-2 truncate">
+                <img
+                  src={currentUser.photoURL || 'https://api.dicebear.com/7.x/bottts/svg?seed=user'}
+                  alt={currentUser.displayName || 'User'}
+                  className="w-6 h-6 rounded-full border border-blue-400 object-cover shrink-0"
+                />
+                <div className="truncate">
+                  <div className="text-[11px] font-semibold text-white truncate">
+                    {currentUser.displayName || 'Authenticated Artist'}
+                  </div>
+                  <div className="text-[9px] text-[#717c91] truncate font-mono">
+                    {currentUser.email || 'Google Account'}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={onSignOut}
+                className="text-[10px] text-red-400 hover:text-red-300 ml-2"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between w-full">
+              <span className="text-[11px] text-[#8490a6]">Sign in to sync your edits</span>
+              <button
+                onClick={onSignIn}
+                className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium text-[10px]"
+              >
+                Sign In (Google)
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Share Invite button */}

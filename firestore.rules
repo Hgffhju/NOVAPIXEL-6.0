@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Projects collection
+    match /projects/{projectId} {
+      allow read, write: if true;
+    }
+
+    // Real-time collaborative sessions
+    match /collabSessions/{sessionId} {
+      allow read, write: if true;
+
+      // Pinpoint canvas comments
+      match /comments/{commentId} {
+        allow read, write: if true;
+      }
+
+      // Live peer presence and cursors
+      match /collaborators/{userId} {
+        allow read, write: if true;
+      }
+    }
+  }
+}

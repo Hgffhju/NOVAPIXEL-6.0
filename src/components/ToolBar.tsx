@@ -19,6 +19,8 @@ import {
   Search,
   Sparkles,
   RefreshCw,
+  MousePointerClick,
+  Target,
 } from 'lucide-react';
 import { ToolType } from '../types';
 
@@ -43,11 +45,13 @@ export const ToolBar: React.FC<ToolBarProps> = ({
 }) => {
   const tools: Array<{ id: ToolType; label: string; icon: React.ReactNode; shortcut: string }> = [
     { id: 'move', label: 'Move Tool', icon: <Move size={16} />, shortcut: 'V' },
+    { id: 'layer-picker', label: 'Layer Pick Tool (Direct Layer Selection)', icon: <MousePointerClick size={16} />, shortcut: 'A' },
     { id: 'marquee-rect', label: 'Rectangular Marquee', icon: <Square size={16} />, shortcut: 'M' },
     { id: 'lasso', label: 'Lasso Selection', icon: <Lasso size={16} />, shortcut: 'L' },
     { id: 'magic-wand', label: 'AI Magic Wand & Color Range', icon: <Wand2 size={16} />, shortcut: 'W' },
     { id: 'crop', label: 'Crop & Straighten Tool', icon: <Crop size={16} />, shortcut: 'C' },
-    { id: 'eyedropper', label: 'Eyedropper & Color Loupe', icon: <Pipette size={16} />, shortcut: 'I' },
+    { id: 'eyedropper', label: 'Color Picker & Loupe Tool', icon: <Pipette size={16} />, shortcut: 'I' },
+    { id: 'color-sampler', label: 'Color Sampler Points Tool', icon: <Target size={16} />, shortcut: 'N' },
     { id: 'heal', label: 'Poisson Healing Brush', icon: <Bandage size={16} />, shortcut: 'J' },
     { id: 'spot', label: 'Spot Healing Tool', icon: <Sparkles size={16} />, shortcut: 'K' },
     { id: 'brush', label: 'Paintbrush Tool', icon: <Paintbrush size={16} />, shortcut: 'B' },

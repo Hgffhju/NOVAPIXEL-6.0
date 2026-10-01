@@ -12,6 +12,17 @@ export interface SampleProject {
 
 export const SAMPLE_PROJECTS: SampleProject[] = [
   {
+    id: 'driving-licence-verification',
+    title: 'International Driving Licence (Document Verification)',
+    subtitle: 'Official Identity & Hologram Document',
+    category: 'Document & Identity Design',
+    width: 1012,
+    height: 638,
+    imageSrc: '', // generated canvas document with Front/Back layers
+    description: 'High-security identification document card with Front & Back folders, photo masks, micropoint security pattern, signatures, barcode layers, and scanned effect overlays as seen in the official verification template.',
+    suggestedTools: ['move', 'text', 'crop', 'heal', 'pen'],
+  },
+  {
     id: 'fashion-editorial',
     title: 'High-Fashion Editorial Retouch',
     subtitle: 'Vogue Studio Session #04',

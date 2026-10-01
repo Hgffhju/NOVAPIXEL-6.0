@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "A saved creative artwork document in NovaPixel Studio",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "width": { "type": "number" },
+        "height": { "type": "number" },
+        "bitDepth": { "type": "number" },
+        "colorProfile": { "type": "string" },
+        "linearLight": { "type": "boolean" },
+        "ownerId": { "type": "string" },
+        "updatedAt": { "type": "number" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["title", "width", "height", "bitDepth", "colorProfile", "ownerId", "updatedAt"]
+    },
+    "CollabSession": {
+      "title": "CollabSession",
+      "description": "A real-time collaborative editing room session",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "projectId": { "type": "string" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["name", "updatedAt"]
+    },
+    "CanvasComment": {
+      "title": "CanvasComment",
+      "description": "An interactive pinpoint annotation pin placed directly on the canvas coordinates",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "text": { "type": "string" },
+        "resolved": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "userName", "x", "y", "text", "resolved", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "Project",
+      "description": "Collection of creative projects and artboards"
+    },
+    "/collabSessions/{sessionId}": {
+      "schema": "CollabSession",
+      "description": "Active real-time collaborative multi-user rooms"
+    },
+    "/collabSessions/{sessionId}/comments/{commentId}": {
+      "schema": "CanvasComment",
+      "description": "Canvas pinpoint comments dropped by collaborators"
+    }
+  }
+}

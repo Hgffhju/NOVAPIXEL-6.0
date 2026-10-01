@@ -12,6 +12,8 @@ import {
   HistoryItem,
   AdjustmentType,
   BlendMode,
+  EyedropperSettings,
+  ColorSamplerPoint,
 } from './types';
 import { SAMPLE_PROJECTS } from './engine/sampleProjects';
 import { TopMenuBar } from './components/TopMenuBar';
@@ -26,6 +28,7 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { ColorPickerModal } from './components/ColorPickerModal';
 import { ExportModal } from './components/ExportModal';
 import { NewCanvasModal } from './components/NewCanvasModal';
+import { CloudProjectsModal } from './components/CloudProjectsModal';
 import {
   Layers,
   Sliders,
@@ -42,6 +45,18 @@ import {
   applyInvert,
   applyDesaturate,
 } from './engine/filters';
+import {
+  subscribeToSessionComments,
+  addCommentToCloud,
+  toggleCommentResolution,
+  saveProjectToFirestore,
+  subscribeToCollaboratorPresence,
+  broadcastUserCursor,
+  loginWithGoogle,
+  logoutUser,
+  subscribeToAuth,
+} from './services/firebaseSync';
+import { User } from 'firebase/auth';
 
 export default function App() {
   // Document Dimensions and Metadata
@@ -51,6 +66,10 @@ export default function App() {
   const [bitDepth, setBitDepth] = useState<BitDepth>(16);
   const [colorProfile, setColorProfile] = useState<ColorProfileName>('Display P3');
   const [linearLight, setLinearLight] = useState(true);
+  const [cloudStatusMsg, setCloudStatusMsg] = useState('');
+
+  // Firebase User
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   // Active Tool & Settings
   const [currentTool, setCurrentTool] = useState<ToolType>('brush');
@@ -81,6 +100,15 @@ export default function App() {
   const [selection, setSelection] = useState<SelectionArea | null>(null);
   const [cropPreset, setCropPreset] = useState('original');
 
+  // Eyedropper & Color Samplers
+  const [eyedropperSettings, setEyedropperSettings] = useState<EyedropperSettings>({
+    sampleSize: 1,
+    sampleSource: 'all',
+    showLoupe: true,
+  });
+  const [colorSamplers, setColorSamplers] = useState<ColorSamplerPoint[]>([]);
+  const [hoveredColor, setHoveredColor] = useState<string>('');
+
   // Canvas Viewport Pan & Zoom
   const [zoom, setZoom] = useState(0.85);
   const [pan, setPan] = useState({ x: 80, y: 40 });
@@ -93,6 +121,7 @@ export default function App() {
   const [isForegroundPick, setIsForegroundPick] = useState(true);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isNewDocOpen, setIsNewDocOpen] = useState(false);
+  const [isCloudGalleryOpen, setIsCloudGalleryOpen] = useState(false);
 
   // Undo / Redo History
   const [history, setHistory] = useState<HistoryItem[]>([
@@ -265,6 +294,71 @@ export default function App() {
   useEffect(() => {
     loadProject('fashion-editorial');
   }, [loadProject]);
+
+  // Subscribe to Firebase Auth
+  useEffect(() => {
+    const unsub = subscribeToAuth((user) => {
+      setCurrentUser(user);
+    });
+    return () => unsub();
+  }, []);
+
+  // Real-time Firestore canvas comments listener
+  useEffect(() => {
+    const unsub = subscribeToSessionComments('studio-main', (cloudComments) => {
+      if (cloudComments.length > 0) {
+        setComments(cloudComments);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Real-time Firestore peer presence listener
+  useEffect(() => {
+    const unsub = subscribeToCollaboratorPresence('studio-main', currentUser?.uid || 'guest-user', (remotePeers) => {
+      if (remotePeers.length > 0) {
+        // Merge remote real peers with our default studio avatars
+        setCollaborators((prev) => {
+          const defaultPeers = prev.filter((p) => p.id.startsWith('user-'));
+          const remoteCollabs = remotePeers.map((rp) => ({
+            id: rp.id,
+            name: rp.name || 'Remote Artist',
+            avatar: rp.avatar || 'https://api.dicebear.com/7.x/bottts/svg?seed=' + rp.id,
+            role: 'Collaborator',
+            color: rp.color || '#3b82f6',
+            cursor: rp.cursor,
+            lastSeen: rp.lastSeen || Date.now(),
+          }));
+          return [...defaultPeers, ...remoteCollabs];
+        });
+      }
+    });
+    return () => unsub();
+  }, [currentUser]);
+
+  // Cloud Save handler
+  const handleSaveToCloud = async () => {
+    try {
+      setCloudStatusMsg('Saving project to Cloud Firestore...');
+      await saveProjectToFirestore({
+        id: 'proj-' + docName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+        name: docName,
+        width: docWidth,
+        height: docHeight,
+        bitDepth,
+        colorProfile,
+        linearLight,
+        layersCount: layers.length,
+        updatedAt: Date.now(),
+      });
+      setCloudStatusMsg('✓ Project saved to Cloud Firestore');
+      setTimeout(() => setCloudStatusMsg(''), 4000);
+    } catch (err: any) {
+      console.error('Error saving to Cloud Firestore:', err);
+      setCloudStatusMsg('Cloud save error: ' + (err.message || 'Check connection'));
+      setTimeout(() => setCloudStatusMsg(''), 4000);
+    }
+  };
 
   // Sync brush color when foreground color changes
   useEffect(() => {
@@ -743,7 +837,20 @@ export default function App() {
         onDeselect={() => setSelection(null)}
         onAddLayer={handleAddLayer}
         onAddAdjustment={handleAddAdjustment}
+        onSaveCloud={handleSaveToCloud}
+        onOpenCloudGallery={() => setIsCloudGalleryOpen(true)}
+        currentUser={currentUser}
+        onSignIn={() => loginWithGoogle()}
+        onSignOut={() => logoutUser()}
       />
+
+      {/* Cloud Status Notification */}
+      {cloudStatusMsg && (
+        <div className="absolute top-12 left-1/2 -translate-x-1/2 z-50 bg-[#1e2436] border border-blue-500/80 text-blue-200 text-xs px-3.5 py-1.5 rounded-full shadow-2xl animate-fade-in flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+          <span>{cloudStatusMsg}</span>
+        </div>
+      )}
 
       {/* 2. Context Options Bar (Tool dynamic options) */}
       <ContextOptionsBar
@@ -766,6 +873,12 @@ export default function App() {
         hasSelection={!!selection}
         cropPreset={cropPreset}
         onSetCropPreset={setCropPreset}
+        eyedropperSettings={eyedropperSettings}
+        onUpdateEyedropper={(s) => setEyedropperSettings((prev) => ({ ...prev, ...s }))}
+        sampledColor={hoveredColor || foregroundColor}
+        colorSamplers={colorSamplers}
+        onClearColorSamplers={() => setColorSamplers([])}
+        activeLayerName={layers.find((l) => l.id === activeLayerId)?.name}
       />
 
       {/* 3. Main Workspace Area: Left Tools + Center Stage Canvas + Right Dock */}
@@ -805,24 +918,34 @@ export default function App() {
             onSetSelection={setSelection}
             collaborators={collaborators}
             comments={comments}
-            onAddComment={(newComment) => {
-              setComments((prev) => [
-                ...prev,
-                {
-                  id: 'c-' + Date.now(),
-                  userId: 'user-you',
-                  userName: 'You',
-                  userAvatar: '',
-                  createdAt: Date.now(),
-                  resolved: false,
-                  ...newComment,
-                },
-              ]);
+            onAddComment={async (newComment) => {
+              const commentData = {
+                userId: currentUser?.uid || 'user-you',
+                userName: currentUser?.displayName || 'You',
+                userAvatar: currentUser?.photoURL || '',
+                resolved: false,
+                createdAt: Date.now(),
+                ...newComment,
+              };
+              setComments((prev) => [{ id: 'c-' + Date.now(), ...commentData }, ...prev]);
+              try {
+                await addCommentToCloud('studio-main', commentData);
+              } catch (e) {
+                console.warn('Saved comment locally, cloud sync notice:', e);
+              }
             }}
-            onResolveComment={(cId) => {
+            onResolveComment={async (cId) => {
+              const current = comments.find((c) => c.id === cId);
+              if (!current) return;
+              const newStatus = !current.resolved;
               setComments((prev) =>
-                prev.map((c) => (c.id === cId ? { ...c, resolved: !c.resolved } : c))
+                prev.map((c) => (c.id === cId ? { ...c, resolved: newStatus } : c))
               );
+              try {
+                await toggleCommentResolution('studio-main', cId, newStatus);
+              } catch (e) {
+                console.warn('Updated comment locally, cloud sync notice:', e);
+              }
             }}
             zoom={zoom}
             onZoomChange={setZoom}
@@ -830,6 +953,23 @@ export default function App() {
             onPanChange={setPan}
             onColorSampled={setForegroundColor}
             onSnapshot={() => pushHistory(`Tool: ${currentTool}`)}
+            foregroundColor={foregroundColor}
+            backgroundColor={backgroundColor}
+            onBroadcastCursor={(x, y) => {
+              broadcastUserCursor(
+                'studio-main',
+                currentUser?.uid || 'guest-user',
+                currentUser?.displayName || 'Guest Artist',
+                '#3b82f6',
+                currentUser?.photoURL || '',
+                { x, y, activeTool: currentTool }
+              );
+            }}
+            onSelectLayer={(layerId) => setActiveLayerId(layerId)}
+            colorSamplers={colorSamplers}
+            onSetColorSamplers={setColorSamplers}
+            eyedropperSettings={eyedropperSettings}
+            onHoveredColorChange={setHoveredColor}
           />
         </main>
 
@@ -964,10 +1104,18 @@ export default function App() {
               <CollabPanel
                 collaborators={collaborators}
                 comments={comments}
-                onResolveComment={(cId) => {
+                onResolveComment={async (cId) => {
+                  const current = comments.find((c) => c.id === cId);
+                  if (!current) return;
+                  const newStatus = !current.resolved;
                   setComments((prev) =>
-                    prev.map((c) => (c.id === cId ? { ...c, resolved: !c.resolved } : c))
+                    prev.map((c) => (c.id === cId ? { ...c, resolved: newStatus } : c))
                   );
+                  try {
+                    await toggleCommentResolution('studio-main', cId, newStatus);
+                  } catch (e) {
+                    console.warn('Updated comment locally, cloud sync notice:', e);
+                  }
                 }}
                 onFocusComment={(x, y) => {
                   setPan({
@@ -975,6 +1123,9 @@ export default function App() {
                     y: window.innerHeight / 2 - y * zoom,
                   });
                 }}
+                currentUser={currentUser}
+                onSignIn={() => loginWithGoogle()}
+                onSignOut={() => logoutUser()}
               />
             )}
 
@@ -1035,6 +1186,31 @@ export default function App() {
           setHistory([{ id: 'h-0', name: `New: ${name}`, timestamp: Date.now() }]);
           setHistoryIndex(0);
         }}
+      />
+
+      {/* Cloud Firestore Projects Gallery Modal */}
+      <CloudProjectsModal
+        isOpen={isCloudGalleryOpen}
+        onClose={() => setIsCloudGalleryOpen(false)}
+        onOpenProject={(proj) => {
+          setDocName(proj.name);
+          setDocWidth(proj.width);
+          setDocHeight(proj.height);
+          setBitDepth(proj.bitDepth as any);
+          setColorProfile(proj.colorProfile as any);
+          setLinearLight(proj.linearLight);
+
+          const newBase = createLayerInstance('Background (Cloud)', proj.width, proj.height);
+          newBase.ctx.fillStyle = '#ffffff';
+          newBase.ctx.fillRect(0, 0, proj.width, proj.height);
+          const retouch = createLayerInstance('Layer 1', proj.width, proj.height);
+
+          setLayers([newBase, retouch]);
+          setActiveLayerId(retouch.id);
+          fitToScreen(proj.width, proj.height);
+          pushHistory(`Open Cloud: ${proj.name}`);
+        }}
+        onNewDocument={() => setIsNewDocOpen(true)}
       />
     </div>
   );

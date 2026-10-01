@@ -47,6 +47,11 @@ interface TopMenuBarProps {
   onDeselect: () => void;
   onAddLayer: () => void;
   onAddAdjustment: (type: 'curves' | 'levels' | 'hsl' | 'exposure' | 'color-balance') => void;
+  onSaveCloud?: () => void;
+  onOpenCloudGallery?: () => void;
+  currentUser?: { displayName?: string | null; email?: string | null; photoURL?: string | null } | null;
+  onSignIn?: () => void;
+  onSignOut?: () => void;
 }
 
 export const TopMenuBar: React.FC<TopMenuBarProps> = ({
@@ -75,6 +80,11 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   onDeselect,
   onAddLayer,
   onAddAdjustment,
+  onSaveCloud,
+  onOpenCloudGallery,
+  currentUser,
+  onSignIn,
+  onSignOut,
 }) => {
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -92,12 +102,15 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
   const menuItems: Record<string, Array<{ label: string; action?: () => void; shortcut?: string; divider?: boolean; disabled?: boolean }>> = {
     File: [
       { label: 'New Document...', action: onNew, shortcut: '⌘N' },
+      { label: 'Save to Cloud Firestore', action: onSaveCloud, shortcut: '⌘S' },
+      { label: 'Open from Cloud Firestore...', action: onOpenCloudGallery },
+      { divider: true, label: '' },
       { label: 'Sample: Vogue Editorial Portrait', action: () => onOpenSample('fashion-editorial') },
       { label: 'Sample: Neo-Tokyo Matte Painting', action: () => onOpenSample('cyberpunk-city') },
       { label: 'Sample: Minimalist Ceramic Product', action: () => onOpenSample('studio-product') },
       { divider: true, label: '' },
       { label: 'Export As (PNG / JPEG / WebP / SVG)...', action: onExport, shortcut: '⌘⌥W' },
-      { label: 'Save Project Archive (.novapix)', action: onExport, shortcut: '⌘S' },
+      { label: 'Download Project Archive (.novapix)', action: onExport },
     ],
     Edit: [
       { label: 'Undo', action: onUndo, shortcut: '⌘Z', disabled: !canUndo },
@@ -282,6 +295,31 @@ export const TopMenuBar: React.FC<TopMenuBarProps> = ({
           <Download size={12} />
           <span>Export</span>
         </button>
+
+        {/* User Account / Google Sign-In */}
+        {currentUser ? (
+          <div className="flex items-center gap-1.5 pl-1">
+            <img
+              src={currentUser.photoURL || 'https://api.dicebear.com/7.x/bottts/svg?seed=user'}
+              alt={currentUser.displayName || 'User'}
+              className="w-5 h-5 rounded-full border border-blue-500 object-cover"
+              title={`Logged in as ${currentUser.displayName || currentUser.email}`}
+            />
+            <button
+              onClick={onSignOut}
+              className="text-[10px] text-[#8692a7] hover:text-white px-1.5 py-0.5 rounded hover:bg-[#23293a]"
+            >
+              Sign Out
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onSignIn}
+            className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#1e2433] hover:bg-[#273044] border border-[#2e374c] text-blue-300 font-medium transition-colors text-[11px]"
+          >
+            <span>Sign In</span>
+          </button>
+        )}
       </div>
     </header>
   );

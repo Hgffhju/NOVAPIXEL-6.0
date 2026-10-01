@@ -1,11 +1,13 @@
 export type ToolType =
   | 'move'
+  | 'layer-picker'
   | 'marquee-rect'
   | 'marquee-ellipse'
   | 'lasso'
   | 'magic-wand'
   | 'crop'
   | 'eyedropper'
+  | 'color-sampler'
   | 'brush'
   | 'eraser'
   | 'clone'
@@ -21,6 +23,25 @@ export type ToolType =
   | 'shape-star'
   | 'hand'
   | 'zoom';
+
+export type EyedropperSampleSize = 1 | 3 | 5 | 11 | 31;
+export type EyedropperSampleSource = 'all' | 'current' | 'current-below';
+
+export interface EyedropperSettings {
+  sampleSize: EyedropperSampleSize;
+  sampleSource: EyedropperSampleSource;
+  showLoupe: boolean;
+}
+
+export interface ColorSamplerPoint {
+  id: string;
+  x: number;
+  y: number;
+  r: number;
+  g: number;
+  b: number;
+  hex: string;
+}
 
 export type BlendMode =
   | 'normal'

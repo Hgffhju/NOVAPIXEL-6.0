@@ -9,6 +9,8 @@ import {
   CanvasComment,
   BitDepth,
   ColorProfileName,
+  EyedropperSettings,
+  ColorSamplerPoint,
 } from '../types';
 import {
   buildCurveLUT,
@@ -43,6 +45,14 @@ interface CanvasWorkspaceProps {
   onPanChange: (pan: { x: number; y: number }) => void;
   onColorSampled: (color: string) => void;
   onSnapshot: () => void;
+  foregroundColor: string;
+  backgroundColor: string;
+  onBroadcastCursor?: (x: number, y: number) => void;
+  onSelectLayer?: (layerId: string) => void;
+  colorSamplers?: ColorSamplerPoint[];
+  onSetColorSamplers?: (samplers: ColorSamplerPoint[]) => void;
+  eyedropperSettings?: EyedropperSettings;
+  onHoveredColorChange?: (color: string) => void;
 }
 
 export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
@@ -66,6 +76,14 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   onPanChange,
   onColorSampled,
   onSnapshot,
+  foregroundColor,
+  backgroundColor,
+  onBroadcastCursor,
+  onSelectLayer,
+  colorSamplers = [],
+  onSetColorSamplers,
+  eyedropperSettings = { sampleSize: 1, sampleSource: 'all', showLoupe: true },
+  onHoveredColorChange,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const compositeCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -77,6 +95,50 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   const [activeCommentDraft, setActiveCommentDraft] = useState<{ x: number; y: number; text: string } | null>(null);
   const [mouseCanvasPos, setMouseCanvasPos] = useState<{ x: number; y: number } | null>(null);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
+
+  // Precision color sampler helper
+  const sampleColorAt = useCallback(
+    (canvasX: number, canvasY: number, size = 1, source: 'all' | 'current' = 'all') => {
+      let targetCtx: CanvasRenderingContext2D | null = null;
+      if (source === 'current') {
+        const active = layers.find((l) => l.id === activeLayerId);
+        targetCtx = active ? active.ctx : null;
+      } else {
+        targetCtx = compositeCanvasRef.current ? compositeCanvasRef.current.getContext('2d') : null;
+      }
+
+      if (!targetCtx) return { r: 0, g: 0, b: 0, a: 0, hex: '#000000' };
+
+      const half = Math.floor(size / 2);
+      const startX = Math.max(0, Math.min(documentWidth - 1, Math.round(canvasX) - half));
+      const startY = Math.max(0, Math.min(documentHeight - 1, Math.round(canvasY) - half));
+      const w = Math.max(1, Math.min(documentWidth - startX, size));
+      const h = Math.max(1, Math.min(documentHeight - startY, size));
+
+      const imgData = targetCtx.getImageData(startX, startY, w, h).data;
+      let totalR = 0;
+      let totalG = 0;
+      let totalB = 0;
+      let totalA = 0;
+      const count = w * h;
+
+      for (let i = 0; i < imgData.length; i += 4) {
+        totalR += imgData[i];
+        totalG += imgData[i + 1];
+        totalB += imgData[i + 2];
+        totalA += imgData[i + 3];
+      }
+
+      const r = Math.round(totalR / count);
+      const g = Math.round(totalG / count);
+      const b = Math.round(totalB / count);
+      const a = totalA / count;
+
+      const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+      return { r, g, b, a, hex };
+    },
+    [layers, activeLayerId, documentWidth, documentHeight]
+  );
 
   // Active stroke / tool execution state
   const strokeStateRef = useRef<{
@@ -343,6 +405,283 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       ctx.restore();
     }
 
+    // 3. Gradient Vector Preview Line
+    if (isPointerDown && currentTool === 'gradient' && mouseCanvasPos) {
+      const [startX, startY] = strokeStateRef.current.startPos;
+      const p1 = toScreen(startX, startY);
+      const p2 = toScreen(mouseCanvasPos.x, mouseCanvasPos.y);
+
+      ctx.save();
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p1.sx, p1.sy);
+      ctx.lineTo(p2.sx, p2.sy);
+      ctx.stroke();
+
+      // Start color indicator dot
+      ctx.fillStyle = foregroundColor;
+      ctx.strokeStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(p1.sx, p1.sy, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // End color indicator dot
+      ctx.fillStyle = backgroundColor;
+      ctx.beginPath();
+      ctx.arc(p2.sx, p2.sy, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 4. Vector Shape Live Drag Preview
+    if (
+      isPointerDown &&
+      ['shape-rect', 'shape-ellipse', 'shape-star'].includes(currentTool) &&
+      mouseCanvasPos
+    ) {
+      const [startX, startY] = strokeStateRef.current.startPos;
+      const x = Math.min(startX, mouseCanvasPos.x);
+      const y = Math.min(startY, mouseCanvasPos.y);
+      const w = Math.abs(mouseCanvasPos.x - startX);
+      const h = Math.abs(mouseCanvasPos.y - startY);
+      const p1 = toScreen(x, y);
+
+      ctx.save();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.fillStyle = `${foregroundColor}33`;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+
+      if (currentTool === 'shape-rect') {
+        ctx.fillRect(p1.sx, p1.sy, w * zoom, h * zoom);
+        ctx.strokeRect(p1.sx, p1.sy, w * zoom, h * zoom);
+      } else if (currentTool === 'shape-ellipse') {
+        const cx = p1.sx + (w * zoom) / 2;
+        const cy = p1.sy + (h * zoom) / 2;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, (w * zoom) / 2, (h * zoom) / 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else if (currentTool === 'shape-star') {
+        ctx.fillRect(p1.sx, p1.sy, w * zoom, h * zoom);
+        ctx.strokeRect(p1.sx, p1.sy, w * zoom, h * zoom);
+      }
+      ctx.restore();
+    }
+
+    // 5. Crop Tool 3x3 Grid Overlay
+    if (currentTool === 'crop' && selection) {
+      const p = toScreen(selection.x, selection.y);
+      const w = selection.width * zoom;
+      const h = selection.height * zoom;
+
+      ctx.save();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(p.sx, p.sy, w, h);
+
+      // Rule of thirds grid
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = 1;
+      for (let i = 1; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(p.sx + (w * i) / 3, p.sy);
+        ctx.lineTo(p.sx + (w * i) / 3, p.sy + h);
+        ctx.moveTo(p.sx, p.sy + (h * i) / 3);
+        ctx.lineTo(p.sx + w, p.sy + (h * i) / 3);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // 6. Photoshop Eyedropper Sampling Ring & Magnifier Loupe
+    if (currentTool === 'eyedropper' && mouseCanvasPos && eyedropperSettings.showLoupe) {
+      const sampled = sampleColorAt(
+        mouseCanvasPos.x,
+        mouseCanvasPos.y,
+        eyedropperSettings.sampleSize,
+        eyedropperSettings.sampleSource === 'current' ? 'current' : 'all'
+      );
+      const p = toScreen(mouseCanvasPos.x, mouseCanvasPos.y);
+
+      // Loupe center placed slightly above cursor
+      const lx = p.sx;
+      const ly = p.sy - 44;
+      const outerR = 34;
+      const innerR = 24;
+
+      ctx.save();
+
+      // Shadow
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = 12;
+      ctx.shadowOffsetY = 4;
+
+      // Inner Magnified Grid background
+      ctx.beginPath();
+      ctx.arc(lx, ly, innerR, 0, Math.PI * 2);
+      ctx.fillStyle = '#12141a';
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+
+      // Draw magnified 7x7 pixel grid from composite canvas
+      const comp = compositeCanvasRef.current;
+      if (comp) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(lx, ly, innerR - 1, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(
+          comp,
+          Math.round(mouseCanvasPos.x) - 3,
+          Math.round(mouseCanvasPos.y) - 3,
+          7,
+          7,
+          lx - innerR,
+          ly - innerR,
+          innerR * 2,
+          innerR * 2
+        );
+        ctx.restore();
+      }
+
+      // Center crosshair target pixel
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(lx - 3, ly - 3, 6, 6);
+
+      // Top Half Outer Ring: Current Sampled Color
+      ctx.beginPath();
+      ctx.arc(lx, ly, (outerR + innerR) / 2, Math.PI, 0);
+      ctx.strokeStyle = sampled.hex;
+      ctx.lineWidth = outerR - innerR;
+      ctx.stroke();
+
+      // Bottom Half Outer Ring: Previous Foreground Color
+      ctx.beginPath();
+      ctx.arc(lx, ly, (outerR + innerR) / 2, 0, Math.PI);
+      ctx.strokeStyle = foregroundColor;
+      ctx.lineWidth = outerR - innerR;
+      ctx.stroke();
+
+      // Dividing lines & boundaries
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(lx, ly, outerR, 0, Math.PI * 2);
+      ctx.arc(lx, ly, innerR, 0, Math.PI * 2);
+      ctx.moveTo(lx - outerR, ly);
+      ctx.lineTo(lx - innerR, ly);
+      ctx.moveTo(lx + innerR, ly);
+      ctx.lineTo(lx + outerR, ly);
+      ctx.stroke();
+
+      // Readout badge below loupe
+      const badgeText = `${sampled.hex.toUpperCase()} · R:${sampled.r} G:${sampled.g} B:${sampled.b}`;
+      ctx.font = 'bold 9px "Plus Jakarta Sans", monospace';
+      const bW = ctx.measureText(badgeText).width + 12;
+      ctx.fillStyle = 'rgba(18, 20, 26, 0.95)';
+      ctx.strokeStyle = '#3b4356';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(lx - bW / 2, ly + outerR + 4, bW, 16, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(badgeText, lx - bW / 2 + 6, ly + outerR + 15);
+
+      ctx.restore();
+    }
+
+    // 7. Color Sampler Target Points
+    if (colorSamplers && colorSamplers.length > 0) {
+      colorSamplers.forEach((s, idx) => {
+        const p = toScreen(s.x, s.y);
+        ctx.save();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+
+        // Target crosshair
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, 8, 0, Math.PI * 2);
+        ctx.moveTo(p.sx - 12, p.sy);
+        ctx.lineTo(p.sx + 12, p.sy);
+        ctx.moveTo(p.sx, p.sy - 12);
+        ctx.lineTo(p.sx + 12, p.sy);
+        ctx.stroke();
+
+        // Color center
+        ctx.fillStyle = s.hex;
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Number Badge
+        ctx.fillStyle = '#3b82f6';
+        ctx.beginPath();
+        ctx.arc(p.sx + 12, p.sy - 12, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.fillText(String(idx + 1), p.sx + 9.5, p.sy - 9);
+
+        ctx.restore();
+      });
+    }
+
+    // 8. Layer Pick Tool Reticle & Name
+    if (currentTool === 'layer-picker' && mouseCanvasPos) {
+      const p = toScreen(mouseCanvasPos.x, mouseCanvasPos.y);
+
+      // Find top visible layer with pixel at this point
+      let hoveredLayerName = 'No Layer';
+      for (let i = layers.length - 1; i >= 0; i--) {
+        const l = layers[i];
+        if (!l.visible || l.kind === 'adjustment') continue;
+        const pixel = l.ctx.getImageData(
+          Math.max(0, Math.min(documentWidth - 1, Math.round(mouseCanvasPos.x))),
+          Math.max(0, Math.min(documentHeight - 1, Math.round(mouseCanvasPos.y))),
+          1,
+          1
+        ).data;
+        if (pixel[3] > 5) {
+          hoveredLayerName = l.name;
+          break;
+        }
+      }
+
+      ctx.save();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(p.sx - 8, p.sy - 8, 16, 16);
+      ctx.beginPath();
+      ctx.moveTo(p.sx, p.sy - 12);
+      ctx.lineTo(p.sx, p.sy + 12);
+      ctx.moveTo(p.sx - 12, p.sy);
+      ctx.lineTo(p.sx + 12, p.sy);
+      ctx.stroke();
+
+      const label = `Layer: ${hoveredLayerName}`;
+      ctx.font = 'bold 10px sans-serif';
+      const lw = ctx.measureText(label).width + 12;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(p.sx + 12, p.sy - 22, lw, 18, 4);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(label, p.sx + 17, p.sy - 9);
+      ctx.restore();
+    }
+
     // 3. Live Collaborators Cursors & Labels
     collaborators.forEach((user) => {
       if (!user.cursor) return;
@@ -557,24 +896,56 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       return;
     }
 
-    // Eyedropper sampling
+    // Eyedropper Color Picker Tool
     if (currentTool === 'eyedropper') {
-      const comp = compositeCanvasRef.current;
-      if (comp) {
-        const ctx = comp.getContext('2d');
-        if (ctx) {
-          const pixel = ctx.getImageData(
-            Math.round(coords.x),
-            Math.round(coords.y),
-            1,
-            1
-          ).data;
-          const hex = `#${((1 << 24) + (pixel[0] << 16) + (pixel[1] << 8) + pixel[2])
-            .toString(16)
-            .slice(1)}`;
-          onColorSampled(hex);
+      const sampled = sampleColorAt(
+        coords.x,
+        coords.y,
+        eyedropperSettings.sampleSize,
+        eyedropperSettings.sampleSource === 'current' ? 'current' : 'all'
+      );
+      onColorSampled(sampled.hex);
+      onHoveredColorChange?.(sampled.hex);
+      renderOverlay();
+      return;
+    }
+
+    // Color Sampler Targets Tool
+    if (currentTool === 'color-sampler') {
+      const sampled = sampleColorAt(coords.x, coords.y, 1, 'all');
+      const newPoint: ColorSamplerPoint = {
+        id: 'samp-' + Date.now(),
+        x: Math.round(coords.x),
+        y: Math.round(coords.y),
+        r: sampled.r,
+        g: sampled.g,
+        b: sampled.b,
+        hex: sampled.hex,
+      };
+      const existing = colorSamplers || [];
+      const updated = existing.length >= 4 ? [...existing.slice(1), newPoint] : [...existing, newPoint];
+      onSetColorSamplers?.(updated);
+      renderOverlay();
+      return;
+    }
+
+    // Layer Picker Tool (Auto-Select Layer under point)
+    if (currentTool === 'layer-picker') {
+      for (let i = layers.length - 1; i >= 0; i--) {
+        const l = layers[i];
+        if (!l.visible || l.kind === 'adjustment') continue;
+        const pixel = l.ctx.getImageData(
+          Math.max(0, Math.min(documentWidth - 1, Math.round(coords.x))),
+          Math.max(0, Math.min(documentHeight - 1, Math.round(coords.y))),
+          1,
+          1
+        ).data;
+        if (pixel[3] > 5) {
+          onSelectLayer?.(l.id);
+          break;
         }
       }
+      renderOverlay();
       return;
     }
 
@@ -609,6 +980,45 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
       return;
     }
 
+    // Magic Wand / Color Range Selection
+    if (currentTool === 'magic-wand') {
+      const radius = Math.max(30, brushSettings.size * 2);
+      const x0 = Math.max(0, Math.round(coords.x - radius));
+      const y0 = Math.max(0, Math.round(coords.y - radius));
+      const w0 = Math.min(documentWidth - x0, radius * 2);
+      const h0 = Math.min(documentHeight - y0, radius * 2);
+
+      onSetSelection({
+        type: 'ellipse',
+        x: x0,
+        y: y0,
+        width: w0,
+        height: h0,
+      });
+      return;
+    }
+
+    // Text Tool: Stamp typographic layer
+    if (currentTool === 'text') {
+      const activeLayer = layers.find((l) => l.id === activeLayerId);
+      if (activeLayer && !activeLayer.locked) {
+        activeLayer.ctx.save();
+        activeLayer.ctx.font = `700 ${Math.max(24, brushSettings.size)}px "Syne", sans-serif`;
+        activeLayer.ctx.fillStyle = foregroundColor;
+        activeLayer.ctx.fillText('NovaPixel Studio', coords.x, coords.y);
+        activeLayer.ctx.restore();
+        renderComposite();
+        onSnapshot();
+      }
+      return;
+    }
+
+    // Gradient / Vector Shapes / Crop Initialisation
+    if (['gradient', 'shape-rect', 'shape-ellipse', 'shape-star', 'crop'].includes(currentTool)) {
+      strokeStateRef.current.startPos = [coords.x, coords.y];
+      return;
+    }
+
     // Marquee / Lasso Selection Initialisation
     if (['marquee-rect', 'marquee-ellipse', 'lasso'].includes(currentTool)) {
       strokeStateRef.current.startPos = [coords.x, coords.y];
@@ -632,6 +1042,31 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     const coords = getCanvasCoords(e.clientX, e.clientY);
     setMouseCanvasPos(coords);
 
+    // Real-time cursor broadcasting for multi-user collaboration
+    onBroadcastCursor?.(coords.x, coords.y);
+
+    // Live continuous sampling while dragging or hovering with Eyedropper
+    if (currentTool === 'eyedropper') {
+      const sampled = sampleColorAt(
+        coords.x,
+        coords.y,
+        eyedropperSettings.sampleSize,
+        eyedropperSettings.sampleSource === 'current' ? 'current' : 'all'
+      );
+      onHoveredColorChange?.(sampled.hex);
+      if (isPointerDown) {
+        onColorSampled(sampled.hex);
+      }
+      renderOverlay();
+      return;
+    }
+
+    // Layer Picker or Color Sampler hover reticle update
+    if (currentTool === 'layer-picker' || currentTool === 'color-sampler') {
+      renderOverlay();
+      return;
+    }
+
     if (isPanning && lastPointerPos) {
       const dx = e.clientX - lastPointerPos.x;
       const dy = e.clientY - lastPointerPos.y;
@@ -641,6 +1076,12 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
     }
 
     if (!isPointerDown) {
+      renderOverlay();
+      return;
+    }
+
+    // Gradient / Shapes / Crop Dragging
+    if (['gradient', 'shape-rect', 'shape-ellipse', 'shape-star', 'crop'].includes(currentTool)) {
       renderOverlay();
       return;
     }
@@ -696,7 +1137,106 @@ export const CanvasWorkspace: React.FC<CanvasWorkspaceProps> = ({
   };
 
   const handlePointerUp = () => {
-    if (isPointerDown && ['brush', 'eraser', 'clone', 'heal'].includes(currentTool)) {
+    if (!isPointerDown) return;
+
+    const activeLayer = layers.find((l) => l.id === activeLayerId);
+
+    // Gradient Execution
+    if (currentTool === 'gradient' && activeLayer && !activeLayer.locked && mouseCanvasPos) {
+      const [startX, startY] = strokeStateRef.current.startPos;
+      const ctx = activeLayer.ctx;
+      ctx.save();
+      ctx.globalAlpha = brushSettings.opacity;
+      const grad = ctx.createLinearGradient(startX, startY, mouseCanvasPos.x, mouseCanvasPos.y);
+      grad.addColorStop(0, foregroundColor);
+      grad.addColorStop(1, backgroundColor);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, documentWidth, documentHeight);
+      ctx.restore();
+      renderComposite();
+      onSnapshot();
+    }
+
+    // Vector Shapes Execution
+    if (
+      ['shape-rect', 'shape-ellipse', 'shape-star'].includes(currentTool) &&
+      activeLayer &&
+      !activeLayer.locked &&
+      mouseCanvasPos
+    ) {
+      const [startX, startY] = strokeStateRef.current.startPos;
+      const x = Math.min(startX, mouseCanvasPos.x);
+      const y = Math.min(startY, mouseCanvasPos.y);
+      const w = Math.abs(mouseCanvasPos.x - startX);
+      const h = Math.abs(mouseCanvasPos.y - startY);
+
+      if (w > 2 && h > 2) {
+        const ctx = activeLayer.ctx;
+        ctx.save();
+        ctx.globalAlpha = brushSettings.opacity;
+        ctx.fillStyle = foregroundColor;
+        ctx.strokeStyle = backgroundColor;
+        ctx.lineWidth = Math.max(1, brushSettings.size / 8);
+
+        if (currentTool === 'shape-rect') {
+          ctx.fillRect(x, y, w, h);
+          ctx.strokeRect(x, y, w, h);
+        } else if (currentTool === 'shape-ellipse') {
+          ctx.beginPath();
+          ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        } else if (currentTool === 'shape-star') {
+          const cx = x + w / 2;
+          const cy = y + h / 2;
+          const spikes = 5;
+          const outerR = Math.min(w, h) / 2;
+          const innerR = outerR * 0.45;
+          let rot = (Math.PI / 2) * 3;
+          const step = Math.PI / spikes;
+
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - outerR);
+          for (let i = 0; i < spikes; i++) {
+            let sx = cx + Math.cos(rot) * outerR;
+            let sy = cy + Math.sin(rot) * outerR;
+            ctx.lineTo(sx, sy);
+            rot += step;
+            sx = cx + Math.cos(rot) * innerR;
+            sy = cy + Math.sin(rot) * innerR;
+            ctx.lineTo(sx, sy);
+            rot += step;
+          }
+          ctx.lineTo(cx, cy - outerR);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+        renderComposite();
+        onSnapshot();
+      }
+    }
+
+    // Crop Tool Drag Box
+    if (currentTool === 'crop' && mouseCanvasPos) {
+      const [startX, startY] = strokeStateRef.current.startPos;
+      const x = Math.min(startX, mouseCanvasPos.x);
+      const y = Math.min(startY, mouseCanvasPos.y);
+      const w = Math.abs(mouseCanvasPos.x - startX);
+      const h = Math.abs(mouseCanvasPos.y - startY);
+      if (w > 10 && h > 10) {
+        onSetSelection({
+          type: 'rect',
+          x,
+          y,
+          width: w,
+          height: h,
+        });
+      }
+    }
+
+    if (['brush', 'eraser', 'clone', 'heal'].includes(currentTool)) {
       onSnapshot();
     }
     setIsPointerDown(false);
